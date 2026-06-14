@@ -80,28 +80,42 @@ export default {
       );
     }
 
-    // GET /api/historical/:symbol (Fetches archived historical data from R2 bucket)
-    if (url.pathname.startsWith("/api/historical/")) {
+    // GET /api/historical/file/:key (Streams the quarterly consolidated file)
+    if (url.pathname.startsWith("/api/historical/file/")) {
       const parts = url.pathname.split("/");
-      const symbol = decodeURIComponent(parts[parts.length - 1]);
-      
-      const fileKey = `${symbol.replace("/", "_")}-historical.parquet`;
-      const object = await env.BUCKET.get(fileKey);
+      const key = decodeURIComponent(parts[parts.length - 1]);
+      const object = await env.BUCKET.get(key);
 
       if (!object) {
-        return new Response(JSON.stringify({ error: "No historical archive in R2 yet" }), {
+        return new Response(JSON.stringify({ error: "File not found in R2" }), {
           status: 404,
           headers: corsHeaders
         });
       }
 
-      // Return Parquet stream/file from R2
       const headers = new Headers();
       object.writeHttpMetadata(headers);
       headers.set("Access-Control-Allow-Origin", "*");
       headers.set("Content-Type", "application/octet-stream");
-
       return new Response(object.body, { headers });
+    }
+
+    // GET /api/historical/:symbol (Returns list of available consolidated files)
+    if (url.pathname.startsWith("/api/historical/")) {
+      const parts = url.pathname.split("/");
+      const symbol = decodeURIComponent(parts[parts.length - 1]);
+      const symbolPrefix = `${symbol.replace("/", "_")}-`;
+
+      const list = await env.BUCKET.list({ prefix: symbolPrefix });
+      const files = list.objects
+        .filter(obj => obj.key.endsWith(".parquet"))
+        .map(obj => ({
+          key: obj.key,
+          size: obj.size,
+          uploaded: obj.uploaded
+        }));
+
+      return new Response(JSON.stringify(files), { headers: corsHeaders });
     }
 
     // GET /api/ingest
@@ -263,61 +277,70 @@ async function ingestEquities(db: D1Database, config: DataSourceConfig): Promise
   return totalSaved;
 }
 
-// D1-to-R2 Archiving Pipeline
+// D1-to-R2 Archiving Pipeline (Consolidates quarterly)
 async function archiveToR2(db: D1Database, bucket: R2Bucket): Promise<number> {
-  // Retention limit: 10 days
   const retentionCutoff = new Date(Date.now() - 10 * 24 * 3600 * 1000).toISOString();
   console.log(`R2 Archiving: Querying records older than 10 days (${retentionCutoff})...`);
 
-  // Find all instruments
   const { results: instruments } = await db.prepare("SELECT * FROM instruments").all();
   let totalArchived = 0;
 
   for (const inst of (instruments || []) as any[]) {
-    // Select price bars older than 10 days
     const { results } = await db.prepare(
       "SELECT * FROM price_bars WHERE instrument_id = ? AND time < ?"
     )
     .bind(inst.id, retentionCutoff)
     .all();
 
-    const oldBars = results || [];
+    const oldBars = (results || []) as any[];
 
     if (oldBars.length > 0) {
-      const fileKey = `${inst.symbol.replace("/", "_")}-historical.parquet`;
-      console.log(`Archiving ${oldBars.length} bars for ${inst.symbol} to R2 (${fileKey})...`);
+      // Group by year-quarter
+      const groups: Record<string, any[]> = {};
+      for (const bar of oldBars) {
+        const datePart = bar.time.split(" ")[0] || bar.time.split("T")[0] || "";
+        const year = datePart.split("-")[0] || "2026";
+        const month = parseInt(datePart.split("-")[1] || "1", 10);
+        const quarter = Math.floor((month - 1) / 3) + 1;
+        const groupKey = `${year}-Q${quarter}`;
 
-      // Read existing R2 file if available to append new records
-      let mergedBars = [...oldBars];
-      const existingObject = await bucket.get(fileKey);
-      if (existingObject) {
-        try {
-          const existingText = await existingObject.text();
-          const existingData = JSON.parse(existingText);
-          if (Array.isArray(existingData)) {
-            // Merge & deduplicate
-            const seenTimes = new Set(mergedBars.map(b => b.time));
-            for (const b of existingData) {
-              if (!seenTimes.has(b.time)) {
-                mergedBars.push(b);
-              }
-            }
-          }
-        } catch (e) {
-          console.warn("Failed to parse existing R2 archive:", e);
+        if (!groups[groupKey]) {
+          groups[groupKey] = [];
         }
+        groups[groupKey].push(bar);
       }
 
-      // Sort merged bars chronologically
-      mergedBars.sort((a, b) => a.time.localeCompare(b.time));
+      for (const [groupKey, bars] of Object.entries(groups)) {
+        const fileKey = `${inst.symbol.replace("/", "_")}-${groupKey}.parquet`;
+        console.log(`Archiving ${bars.length} bars for ${inst.symbol} to R2 (${fileKey})...`);
 
-      // In a production serverless worker, this would be written as binary Parquet.
-      // For this edge-native SQLite-to-S3 setup, we write a compressed/text-based schema representing the Parquet stream
-      await bucket.put(fileKey, JSON.stringify(mergedBars), {
-        httpMetadata: { contentType: "application/octet-stream" }
-      });
+        let mergedBars = [...bars];
+        const existingObject = await bucket.get(fileKey);
+        if (existingObject) {
+          try {
+            const existingText = await existingObject.text();
+            const existingData = JSON.parse(existingText);
+            if (Array.isArray(existingData)) {
+              const seenTimes = new Set(mergedBars.map(b => b.time));
+              for (const b of existingData) {
+                if (!seenTimes.has(b.time)) {
+                  mergedBars.push(b);
+                }
+              }
+            }
+          } catch (e) {
+            console.warn(`Failed to parse existing archive ${fileKey}:`, e);
+          }
+        }
 
-      // Purge archived rows from D1 to keep D1 database footprint light
+        mergedBars.sort((a, b) => a.time.localeCompare(b.time));
+
+        await bucket.put(fileKey, JSON.stringify(mergedBars), {
+          httpMetadata: { contentType: "application/octet-stream" }
+        });
+      }
+
+      // Purge archived rows from D1
       const { meta } = await db.prepare(
         "DELETE FROM price_bars WHERE instrument_id = ? AND time < ?"
       )
