@@ -1,0 +1,21 @@
+{
+  "name": "elcamlot-partytown",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun run partytown && vite",
+    "build": "bun run partytown && vite build",
+    "partytown": "partytown copylib public/~partytown"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "vite": "^8.0.16"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@builder.io/partytown": "^0.10.3"
+  }
+}
