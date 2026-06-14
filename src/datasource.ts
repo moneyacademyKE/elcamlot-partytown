@@ -145,8 +145,12 @@ export class AlphaVantageSource {
     const bars: Bar[] = [];
     const basePrice = symbol.includes("BTC") ? 64000 : symbol.includes("ETH") ? 3400 : 150;
     const now = Date.now();
-    for (let i = 10; i >= 0; i--) {
-      const time = new Date(now - i * 15 * 60 * 1000).toISOString();
+    const isCrypto = symbol.includes("/");
+    const intervalMs = isCrypto ? 15 * 60 * 1000 : 24 * 3600 * 1000;
+    const count = isCrypto ? 10 : 30;
+
+    for (let i = count; i >= 0; i--) {
+      const time = new Date(now - i * intervalMs).toISOString();
       const variance = (Math.random() - 0.5) * (basePrice * 0.02);
       bars.push({
         timestamp: time,

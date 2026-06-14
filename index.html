@@ -78,6 +78,12 @@
 
   <!-- Telemetry and DuckDB-WASM queries offloaded to Partytown Web Worker -->
   <script type="text/partytown">
+    const getApiUrl = () => {
+      const isLocal = typeof location !== 'undefined' && 
+        (location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.hostname === "");
+      return isLocal ? "http://localhost:8787" : "https://elcamlot-worker.iamkingori.workers.dev";
+    };
+
     // 1. In-Worker Telemetry handler
     window.trackEvent = (name, data) => {
       console.log(`📊 [Partytown Worker] Event Tracking: "${name}"`, data);
@@ -117,7 +123,7 @@
       appendWorkerLog(`DuckDB-WASM: Querying R2 files for <strong>${symbol}</strong>`);
 
       try {
-        const listUrl = `http://localhost:8787/api/historical/${encodeURIComponent(symbol)}`;
+        const listUrl = `${getApiUrl()}/api/historical/${encodeURIComponent(symbol)}`;
         const listRes = await fetch(listUrl);
         if (!listRes.ok) return [];
         const files = await listRes.json();
@@ -132,7 +138,7 @@
         let allBars = [];
 
         for (const file of files) {
-          const fileUrl = `http://localhost:8787/api/historical/file/${encodeURIComponent(file.key)}`;
+          const fileUrl = `${getApiUrl()}/api/historical/file/${encodeURIComponent(file.key)}`;
           appendWorkerLog(`DuckDB-WASM: Reading <strong>${file.key}</strong>...`);
 
           if (duckdbInitialized && connInstance) {
@@ -324,7 +330,9 @@
     async function triggerIngest(type) {
       console.log(`Triggering ingestion & archive for ${type}...`);
       try {
-        const res = await fetch(`http://localhost:8787/api/ingest?type=${type}`);
+        const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+        const apiUrl = isLocal ? "http://localhost:8787" : "https://elcamlot-worker.iamkingori.workers.dev";
+        const res = await fetch(`${apiUrl}/api/ingest?type=${type}`);
         if (!res.ok) throw new Error("Failed to trigger ingestion");
         const data = await res.json();
         alert(`Ingestion & Archive Triggered!\nSaved ${data.count} D1 bars.\nArchived ${data.archivedCount} old bars to R2 Parquet files!`);

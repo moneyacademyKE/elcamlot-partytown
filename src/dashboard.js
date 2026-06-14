@@ -1,4 +1,5 @@
-const API_URL = "http://localhost:8787";
+const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+const API_URL = isLocal ? "http://localhost:8787" : "https://elcamlot-worker.iamkingori.workers.dev";
 
 document.addEventListener("DOMContentLoaded", () => {
   initDashboard();
