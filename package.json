@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "bun run partytown && vite",
     "build": "bun run partytown && vite build",
-    "partytown": "partytown copylib public/~partytown"
+    "partytown": "partytown copylib public/~partytown",
+    "deploy": "bunx wrangler deploy"
   },
   "devDependencies": {
     "@types/bun": "latest",

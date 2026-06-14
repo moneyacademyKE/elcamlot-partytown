@@ -6,7 +6,7 @@ compatibility_date = "2026-06-14"
 [[d1_databases]]
 binding = "DB"
 database_name = "elcamlot-db"
-database_id = "elcamlot-db-local-id"
+database_id = "9ab47d86-3705-4811-8cdb-284beb193f6e"
 
 # Cloudflare R2 Object Storage binding
 [[r2_buckets]]
