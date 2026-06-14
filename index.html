@@ -3,136 +3,64 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Elcamlot Light - Partytown + Bun Stack</title>
+  <title>Elcamlot Light - Partytown Financial Dashboard</title>
+  
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   
+  <!-- Tailwind CSS Play CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
   <style>
-    :root {
-      --bg-color: #0f172a;
-      --card-bg: rgba(30, 41, 59, 0.7);
-      --border-color: rgba(255, 255, 255, 0.08);
-      --text-primary: #f8fafc;
-      --text-secondary: #94a3b8;
-      --accent: #f97316;
-      --success: #10b981;
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
     body {
       font-family: 'Outfit', sans-serif;
-      background-color: var(--bg-color);
-      color: var(--text-primary);
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 2rem;
-      background-image: radial-gradient(circle at top right, rgba(249, 115, 22, 0.15), transparent 40%),
-                        radial-gradient(circle at bottom left, rgba(16, 185, 129, 0.1), transparent 40%);
+      background-color: #0b0f19;
+      background-image: radial-gradient(circle at 10% 20%, rgba(249, 115, 22, 0.15), transparent 40%),
+                        radial-gradient(circle at 90% 80%, rgba(16, 185, 129, 0.1), transparent 40%);
     }
 
-    .card {
-      background: var(--card-bg);
+    .glass {
+      background: rgba(17, 24, 39, 0.7);
       backdrop-filter: blur(16px);
-      border: 1px solid var(--border-color);
-      border-radius: 24px;
-      padding: 3rem;
-      max-width: 600px;
-      width: 100%;
-      text-align: center;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.08);
     }
 
-    .badge {
-      display: inline-block;
-      padding: 0.5rem 1rem;
-      border-radius: 9999px;
-      font-size: 0.875rem;
-      font-weight: 600;
-      background: rgba(249, 115, 22, 0.1);
-      color: var(--accent);
-      margin-bottom: 1.5rem;
-      border: 1px solid rgba(249, 115, 22, 0.2);
+    .sidebar-btn.active {
+      background: rgba(249, 115, 22, 0.12);
+      border-color: rgba(249, 115, 22, 0.3);
     }
 
-    h1 {
-      font-size: 2.5rem;
-      font-weight: 800;
-      margin-bottom: 1rem;
-      letter-spacing: -0.025em;
-      background: linear-gradient(135deg, #f8fafc 0%, #94a3b8 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+    .sidebar-btn:hover:not(.active) {
+      background: rgba(255, 255, 255, 0.03);
     }
 
-    p {
-      color: var(--text-secondary);
-      line-height: 1.6;
-      margin-bottom: 2rem;
+    .badge-crypto {
+      background: rgba(16, 185, 129, 0.1);
+      color: #10b981;
+      border: 1px solid rgba(16, 185, 129, 0.2);
     }
 
-    .features {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1rem;
-      margin-bottom: 2rem;
-      text-align: left;
+    .badge-stock {
+      background: rgba(59, 130, 246, 0.1);
+      color: #3b82f6;
+      border: 1px solid rgba(59, 130, 246, 0.2);
     }
 
-    .feature-item {
-      background: rgba(255, 255, 255, 0.02);
-      border: 1px solid var(--border-color);
-      border-radius: 16px;
-      padding: 1rem;
+    /* Scrollbar styling */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
     }
-
-    .feature-title {
-      font-weight: 600;
-      font-size: 0.95rem;
-      color: var(--text-primary);
-      margin-bottom: 0.25rem;
+    ::-webkit-scrollbar-track {
+      background: transparent;
     }
-
-    .feature-desc {
-      font-size: 0.825rem;
-      color: var(--text-secondary);
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 999px;
     }
-
-    .status {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.5rem;
-      font-size: 0.875rem;
-      color: var(--success);
-      font-weight: 600;
-      background: rgba(16, 185, 129, 0.08);
-      border: 1px solid rgba(16, 185, 129, 0.15);
-      padding: 0.75rem;
-      border-radius: 12px;
-    }
-
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      background-color: var(--success);
-      border-radius: 50%;
-      box-shadow: 0 0 12px var(--success);
-      animation: pulse 2s infinite;
-    }
-
-    @keyframes pulse {
-      0% { opacity: 0.4; }
-      50% { opacity: 1; }
-      100% { opacity: 0.4; }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.2);
     }
   </style>
 
@@ -140,54 +68,178 @@
   <script>
     partytown = {
       lib: "/~partytown/",
-      debug: true
+      debug: true,
+      forward: ["trackEvent"]
     };
   </script>
 
   <!-- Partytown Snippet -->
   <script src="/~partytown/partytown.js"></script>
 
-  <!-- Third-party script running inside Web Worker via Partytown -->
+  <!-- Telemetry and Analytics offloaded to Partytown Web Worker -->
   <script type="text/partytown">
-    console.log("🚀 Partytown: Third-party script is running safely inside a Web Worker thread!");
-    
-    // Simulate periodic tracking network requests
-    setInterval(() => {
-      console.log("📊 Partytown Web Worker: Sending analytic heartbeat request...");
-    }, 5000);
+    window.trackEvent = (name, data) => {
+      console.log(`📊 [Partytown Worker] Event Tracking: "${name}"`, data);
+      
+      // Append a log line in the UI console log container
+      const logger = document.getElementById("worker-logs");
+      if (logger) {
+        const time = new Date().toLocaleTimeString();
+        const p = document.createElement("p");
+        p.className = "text-emerald-400 font-mono text-2xs mb-1";
+        p.innerHTML = `<span class="text-slate-500">[${time}]</span> Event <strong class="text-slate-200">"${name}"</strong> with: ${JSON.stringify(data)}`;
+        logger.appendChild(p);
+        logger.scrollTop = logger.scrollHeight;
+      }
+    };
+
+    console.log("🚀 [Partytown Worker] Telemetry worker thread is initialized and running off main thread!");
   </script>
 </head>
-<body>
+<body class="text-slate-200 min-h-screen flex flex-col">
 
-  <div class="card">
-    <span class="badge">Builder.io Partytown</span>
-    <h1>Elcamlot Light</h1>
-    <p>An ultra-lightweight, high-performance web dashboard stack. All heavy third-party tracking scripts are offloaded entirely to web worker threads, keeping the browser's main UI thread 100% responsive.</p>
+  <!-- Header -->
+  <header class="glass border-b border-white/5 py-4 px-8 flex justify-between items-center z-10">
+    <div class="flex items-center gap-3">
+      <span class="text-orange-500 font-extrabold text-2xl tracking-tighter">ELCAMLOT</span>
+      <span class="text-xs bg-white/5 px-2 py-0.5 rounded text-slate-400 font-mono">LIGHT</span>
+    </div>
+    <div class="flex items-center gap-4">
+      <button onclick="triggerIngest('crypto')" class="px-4 py-2 text-xs font-semibold bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/30 rounded-xl transition duration-200">
+        Trigger Crypto Ingest
+      </button>
+      <button onclick="triggerIngest('equity')" class="px-4 py-2 text-xs font-semibold bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/30 rounded-xl transition duration-200">
+        Trigger Equity Ingest
+      </button>
+      <span class="h-4 w-px bg-white/10"></span>
+      <div class="flex items-center gap-2 text-xs text-slate-400 bg-white/5 px-3 py-1.5 rounded-lg">
+        <span class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_#10b981]"></span>
+        Cloudflare Edge Online
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Layout -->
+  <div class="flex-1 flex overflow-hidden">
     
-    <div class="features">
-      <div class="feature-item">
-        <div class="feature-title">⚡ Bun Runtime</div>
-        <div class="feature-desc">Superfast package runner and local static files bundler.</div>
+    <!-- Sidebar -->
+    <aside class="w-80 glass border-r border-white/5 p-6 flex flex-col gap-6 overflow-y-auto">
+      <div>
+        <h2 class="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3">Instruments</h2>
+        <div id="instruments-list" class="flex flex-col gap-2">
+          <!-- Populated dynamically -->
+          <div class="text-xs text-slate-500 py-4 text-center">Loading instruments...</div>
+        </div>
       </div>
-      <div class="feature-item">
-        <div class="feature-title">☁️ Cloudflare Pages</div>
-        <div class="feature-desc">Serverless static distribution directly from the edge network.</div>
+      
+      <!-- Worker logs (Partytown console output display) -->
+      <div class="mt-auto border-t border-white/5 pt-6">
+        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center justify-between">
+          <span>Partytown Worker Logs</span>
+          <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
+        </h3>
+        <div id="worker-logs" class="h-32 bg-black/40 border border-white/5 rounded-xl p-3 overflow-y-auto flex flex-col gap-1">
+          <p class="text-slate-600 text-3xs font-mono">Initializing Worker...</p>
+        </div>
       </div>
-      <div class="feature-item">
-        <div class="feature-title">🧵 Web Worker Offload</div>
-        <div class="feature-desc">Scripts run in background thread via Partytown's proxies.</div>
-      </div>
-      <div class="feature-item">
-        <div class="feature-title">🎯 100 Lighthouse Score</div>
-        <div class="feature-desc">Zero main-thread blocking time from third-party libraries.</div>
-      </div>
-    </div>
+    </aside>
 
-    <div class="status">
-      <div class="status-dot"></div>
-      Partytown Web Worker Active & Monitoring
-    </div>
+    <!-- Main Workspace -->
+    <main class="flex-1 p-8 overflow-y-auto flex flex-col gap-8">
+      
+      <!-- active instrument details header -->
+      <div class="flex items-center gap-4">
+        <h1 id="active-symbol" class="text-4xl font-extrabold text-slate-100">BTC/USD</h1>
+        <span id="active-asset-class" class="text-xs px-3 py-1 rounded-full uppercase font-bold tracking-wider">Crypto</span>
+      </div>
+
+      <!-- Loading skeleton / states -->
+      <div class="data-loader flex flex-col gap-8 hidden">
+        <div class="grid grid-cols-4 gap-6">
+          <div class="h-28 glass rounded-2xl animate-pulse"></div>
+          <div class="h-28 glass rounded-2xl animate-pulse"></div>
+          <div class="h-28 glass rounded-2xl animate-pulse"></div>
+          <div class="h-28 glass rounded-2xl animate-pulse"></div>
+        </div>
+        <div class="h-80 glass rounded-3xl animate-pulse"></div>
+      </div>
+
+      <!-- Data content container -->
+      <div class="data-content flex flex-col gap-8">
+        
+        <!-- Stats cards -->
+        <div class="grid grid-cols-4 gap-6">
+          <div class="glass p-6 rounded-2xl flex flex-col gap-1">
+            <span class="text-xs text-slate-400 font-semibold uppercase tracking-wider">Avg Close</span>
+            <div id="avg-close" class="text-2xl font-bold text-slate-100">—</div>
+          </div>
+          <div class="glass p-6 rounded-2xl flex flex-col gap-1">
+            <span class="text-xs text-slate-400 font-semibold uppercase tracking-wider">Median</span>
+            <div id="median-close" class="text-2xl font-bold text-slate-100">—</div>
+          </div>
+          <div class="glass p-6 rounded-2xl flex flex-col gap-1">
+            <span class="text-xs text-slate-400 font-semibold uppercase tracking-wider">Low</span>
+            <div id="low-close" class="text-2xl font-bold text-emerald-400">—</div>
+          </div>
+          <div class="glass p-6 rounded-2xl flex flex-col gap-1">
+            <span class="text-xs text-slate-400 font-semibold uppercase tracking-wider">High</span>
+            <div id="high-close" class="text-2xl font-bold text-rose-400">—</div>
+          </div>
+        </div>
+
+        <!-- Chart Section -->
+        <section class="glass p-6 rounded-3xl flex flex-col gap-4">
+          <h2 class="text-lg font-bold text-slate-100">Price Trend</h2>
+          <div id="chart-container" class="h-72 w-full">
+            <!-- SVG rendered dynamically -->
+          </div>
+        </section>
+
+        <!-- Table Section -->
+        <section class="glass rounded-3xl overflow-hidden">
+          <div class="px-6 py-4 border-b border-white/5">
+            <h2 class="text-lg font-bold text-slate-100">Recent Price Bars</h2>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-white/5">
+              <thead class="bg-white/2">
+                <tr>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Date</th>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Open</th>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">High</th>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Low</th>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Close</th>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Volume</th>
+                </tr>
+              </thead>
+              <tbody id="bars-table-body" class="divide-y divide-white/5 bg-transparent">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+      </div>
+    </main>
   </div>
 
+  <script type="module" src="/src/dashboard.js"></script>
+  
+  <script>
+    async function triggerIngest(type) {
+      console.log(`Triggering ingestion for ${type}...`);
+      try {
+        const res = await fetch(`http://localhost:8787/api/ingest?type=${type}`);
+        if (!res.ok) throw new Error("Failed to trigger ingestion");
+        const data = await res.json();
+        alert(`Ingestion triggered: Saved ${data.count} new bars!`);
+        // Reload dashboard
+        location.reload();
+      } catch (err) {
+        console.error("Ingestion trigger failed:", err);
+        alert(`Failed to trigger ingestion: ${err.message}. Make sure wrangler dev is running.`);
+      }
+    }
+  </script>
 </body>
 </html>

@@ -16,6 +16,6 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "@builder.io/partytown": "^0.10.3"
+    "@qwik.dev/partytown": "^0.14.0"
   }
 }

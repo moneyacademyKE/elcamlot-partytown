@@ -1,0 +1,16 @@
+name = "elcamlot-worker"
+main = "src/worker.ts"
+compatibility_date = "2026-06-14"
+
+# Cloudflare D1 Database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "elcamlot-db"
+database_id = "elcamlot-db-local-id"
+
+# Cron Triggers for ingestion workers
+[triggers]
+crons = [
+  "*/15 * * * *", # Runs every 15 minutes (for CryptoBarWorker)
+  "0 22 * * *",    # Runs daily at 22:00 UTC (for DailyBarWorker)
+]
