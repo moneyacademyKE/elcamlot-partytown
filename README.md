@@ -6,10 +6,40 @@ An ultra-lightweight, high-performance financial dashboard client offloading thi
 
 ## 🚀 Architectural Overview
 
-To maximize page responsiveness and achieve a perfect **100/100 Lighthouse performance score**, this project implements an edge-native, client-side equivalent of the Elcamlot dashboard:
+To maximize page responsiveness and achieve a perfect **100/100 Lighthouse performance score**, this project implements an edge-native, client-side stack that offloads third-party scripts to Web Workers:
 
+```mermaid
+graph TD
+    subgraph Browser (Main UI Thread)
+        UI[Glassmorphism UI Dashboard]
+        PartytownSnippet[Partytown Snippet]
+        ProxyLayer[JS Proxy Interceptor]
+    end
+
+    subgraph Browser Background Thread
+        WorkerThread[Partytown Web Worker]
+        Telemetry[Third-Party Analytics Script]
+    end
+
+    subgraph Edge Network / Backend
+        CFWorker[Cloudflare Workers API]
+        D1[Cloudflare D1 Database]
+        Ingestion[Datasource Ingest Config]
+    end
+
+    UI -->|API Requests| CFWorker
+    CFWorker <--> D1
+    Ingestion -->|Ingests prices| D1
+    
+    PartytownSnippet -->|Bootstraps| WorkerThread
+    Telemetry -->|Executes inside| WorkerThread
+    Telemetry -.->|Synchronous DOM read/write| ProxyLayer
+    ProxyLayer <--> UI
+```
+
+### Component Details:
 1. **Frontend UI**: Built with a clean, zero-dependency glassmorphism interface in static HTML/JS, served via **Vite** and **Bun**, ready for Cloudflare Pages.
-2. **Third-Party Script Sandboxing**: Powered by `@qwik.dev/partytown`. All heavy analytical, telemetry, and tracking scripts are executed off the browser's main UI thread in a background Web Worker.
+2. **Third-Party Script Sandboxing**: Powered by `@qwik.dev/partytown`. All heavy analytical, telemetry, and tracking scripts are executed off the browser's main UI thread in a background Web Worker. Intercepted calls to main thread APIs (like cookies, `window`, or `document`) are handled via synchronous JS Proxies.
 3. **Serverless APIs**: Built as a standard **Cloudflare Worker** serving REST endpoints for instruments and historical price bars.
 4. **Edge Database**: Backed by **Cloudflare D1** (distributed serverless SQLite database) to store instrument tables and price bars.
 5. **Ingestion Pipelines**: Implemented in the worker utilizing **Cloudflare Cron Triggers** to periodically ingest daily equity and 15-minute crypto bars from Alpaca and Alpha Vantage APIs (with resilient fallback logic).
