@@ -8,6 +8,11 @@ binding = "DB"
 database_name = "elcamlot-db"
 database_id = "elcamlot-db-local-id"
 
+# Cloudflare R2 Object Storage binding
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "elcamlot-parquet"
+
 # Cron Triggers for ingestion workers
 [triggers]
 crons = [

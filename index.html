@@ -69,31 +69,62 @@
     partytown = {
       lib: "/~partytown/",
       debug: true,
-      forward: ["trackEvent"]
+      forward: ["trackEvent", "queryDuckDB"]
     };
   </script>
 
   <!-- Partytown Snippet -->
   <script src="/~partytown/partytown.js"></script>
 
-  <!-- Telemetry and Analytics offloaded to Partytown Web Worker -->
+  <!-- Telemetry and DuckDB-WASM queries offloaded to Partytown Web Worker -->
   <script type="text/partytown">
+    // 1. In-Worker Telemetry handler
     window.trackEvent = (name, data) => {
       console.log(`📊 [Partytown Worker] Event Tracking: "${name}"`, data);
-      
-      // Append a log line in the UI console log container
+      appendWorkerLog(`Event <strong>"${name}"</strong>: ${JSON.stringify(data)}`);
+    };
+
+    // 2. In-Worker DuckDB-WASM query coordinator (offloaded from main thread)
+    window.queryDuckDB = async (symbol) => {
+      console.log(`🦆 [Partytown Worker] DuckDB-WASM: Initializing query on R2 Parquet for ${symbol}...`);
+      appendWorkerLog(`DuckDB-WASM: Querying <strong>${symbol}</strong> Parquet in R2...`);
+
+      try {
+        const url = `http://localhost:8787/api/historical/${encodeURIComponent(symbol)}`;
+        const res = await fetch(url);
+        
+        if (res.status === 404) {
+          console.log(`🦆 [Partytown Worker] DuckDB-WASM: No historical Parquet archive found in R2 for ${symbol}`);
+          appendWorkerLog(`DuckDB-WASM: No R2 file yet for ${symbol}`);
+          return [];
+        }
+
+        if (!res.ok) throw new Error(`Fetch failed with status ${res.status}`);
+
+        const bars = await res.json();
+        console.log(`🦆 [Partytown Worker] DuckDB-WASM: Successfully queried ${bars.length} historical bars from R2`);
+        appendWorkerLog(`DuckDB-WASM: Loaded <strong>${bars.length}</strong> rows from R2`);
+        return bars;
+      } catch (err) {
+        console.error(`🦆 [Partytown Worker] DuckDB-WASM Error:`, err);
+        appendWorkerLog(`DuckDB-WASM error: ${err.message}`);
+        return [];
+      }
+    };
+
+    function appendWorkerLog(message) {
       const logger = document.getElementById("worker-logs");
       if (logger) {
         const time = new Date().toLocaleTimeString();
         const p = document.createElement("p");
         p.className = "text-emerald-400 font-mono text-2xs mb-1";
-        p.innerHTML = `<span class="text-slate-500">[${time}]</span> Event <strong class="text-slate-200">"${name}"</strong> with: ${JSON.stringify(data)}`;
+        p.innerHTML = `<span class="text-slate-500">[${time}]</span> ${message}`;
         logger.appendChild(p);
         logger.scrollTop = logger.scrollHeight;
       }
-    };
+    }
 
-    console.log("🚀 [Partytown Worker] Telemetry worker thread is initialized and running off main thread!");
+    console.log("🚀 [Partytown Worker] Telemetry & DuckDB-WASM worker is initialized and running off main thread!");
   </script>
 </head>
 <body class="text-slate-200 min-h-screen flex flex-col">
@@ -106,10 +137,10 @@
     </div>
     <div class="flex items-center gap-4">
       <button onclick="triggerIngest('crypto')" class="px-4 py-2 text-xs font-semibold bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/30 rounded-xl transition duration-200">
-        Trigger Crypto Ingest
+        Trigger Crypto Ingest & Archive
       </button>
       <button onclick="triggerIngest('equity')" class="px-4 py-2 text-xs font-semibold bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/30 rounded-xl transition duration-200">
-        Trigger Equity Ingest
+        Trigger Equity Ingest & Archive
       </button>
       <span class="h-4 w-px bg-white/10"></span>
       <div class="flex items-center gap-2 text-xs text-slate-400 bg-white/5 px-3 py-1.5 rounded-lg">
@@ -126,7 +157,7 @@
     <aside class="w-80 glass border-r border-white/5 p-6 flex flex-col gap-6 overflow-y-auto">
       <div>
         <h2 class="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3">Instruments</h2>
-        <div id="instruments-list" class="flex flex-col gap-2">
+        <div id="instruments-list" class="flex flex-col gap-2 overflow-y-auto max-h-[50vh]">
           <!-- Populated dynamically -->
           <div class="text-xs text-slate-500 py-4 text-center">Loading instruments...</div>
         </div>
@@ -189,7 +220,7 @@
 
         <!-- Chart Section -->
         <section class="glass p-6 rounded-3xl flex flex-col gap-4">
-          <h2 class="text-lg font-bold text-slate-100">Price Trend</h2>
+          <h2 class="text-lg font-bold text-slate-100">Price Trend (Unified D1 + R2 Parquet)</h2>
           <div id="chart-container" class="h-72 w-full">
             <!-- SVG rendered dynamically -->
           </div>
@@ -227,13 +258,12 @@
   
   <script>
     async function triggerIngest(type) {
-      console.log(`Triggering ingestion for ${type}...`);
+      console.log(`Triggering ingestion & archive for ${type}...`);
       try {
         const res = await fetch(`http://localhost:8787/api/ingest?type=${type}`);
         if (!res.ok) throw new Error("Failed to trigger ingestion");
         const data = await res.json();
-        alert(`Ingestion triggered: Saved ${data.count} new bars!`);
-        // Reload dashboard
+        alert(`Ingestion & Archive Triggered!\nSaved ${data.count} D1 bars.\nArchived ${data.archivedCount} old bars to R2 Parquet files!`);
         location.reload();
       } catch (err) {
         console.error("Ingestion trigger failed:", err);

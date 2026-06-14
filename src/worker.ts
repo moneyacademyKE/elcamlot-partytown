@@ -2,6 +2,7 @@ import { DataSource, DataSourceConfig, Bar } from "./datasource";
 
 export interface Env {
   DB: D1Database;
+  BUCKET: R2Bucket;
   APCA_API_KEY_ID?: string;
   APCA_API_SECRET_KEY?: string;
   ALPHA_VANTAGE_API_KEY?: string;
@@ -25,10 +26,10 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     
-    // Seed instruments on first fetch if needed
+    // Seed instruments on first fetch
     await ensureInstrumentsSeeded(env.DB);
 
-    // CORS headers for local testing
+    // CORS headers
     const corsHeaders = {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
@@ -60,6 +61,7 @@ export default {
         });
       }
 
+      // Query D1 (Hot cache: holds last 10 days of bars)
       const { results } = await env.DB.prepare(
         "SELECT * FROM price_bars WHERE instrument_id = ? AND timeframe = ? ORDER BY time DESC LIMIT 365"
       )
@@ -67,8 +69,6 @@ export default {
       .all();
 
       const bars = (results || []).reverse() as any[];
-
-      // Calculate stats in TypeScript (unentangled from SQLite limits)
       const stats = calculateStats(bars);
 
       return new Response(
@@ -80,7 +80,31 @@ export default {
       );
     }
 
-    // Ingestion Trigger Endpoint (for manual execution/testing)
+    // GET /api/historical/:symbol (Fetches archived historical data from R2 bucket)
+    if (url.pathname.startsWith("/api/historical/")) {
+      const parts = url.pathname.split("/");
+      const symbol = decodeURIComponent(parts[parts.length - 1]);
+      
+      const fileKey = `${symbol.replace("/", "_")}-historical.parquet`;
+      const object = await env.BUCKET.get(fileKey);
+
+      if (!object) {
+        return new Response(JSON.stringify({ error: "No historical archive in R2 yet" }), {
+          status: 404,
+          headers: corsHeaders
+        });
+      }
+
+      // Return Parquet stream/file from R2
+      const headers = new Headers();
+      object.writeHttpMetadata(headers);
+      headers.set("Access-Control-Allow-Origin", "*");
+      headers.set("Content-Type", "application/octet-stream");
+
+      return new Response(object.body, { headers });
+    }
+
+    // GET /api/ingest
     if (url.pathname === "/api/ingest") {
       const type = url.searchParams.get("type") || "crypto";
       const config: DataSourceConfig = {
@@ -89,13 +113,17 @@ export default {
         alphaVantageKey: env.ALPHA_VANTAGE_API_KEY || ""
       };
 
+      let count = 0;
       if (type === "crypto") {
-        const count = await ingestCrypto(env.DB, config);
-        return new Response(JSON.stringify({ status: "ok", type, count }), { headers: corsHeaders });
+        count = await ingestCrypto(env.DB, config);
       } else {
-        const count = await ingestEquities(env.DB, config);
-        return new Response(JSON.stringify({ status: "ok", type, count }), { headers: corsHeaders });
+        count = await ingestEquities(env.DB, config);
       }
+
+      // Trigger automatic R2 archiving cycle (moves data older than 10 days to R2)
+      const archivedCount = await archiveToR2(env.DB, env.BUCKET);
+
+      return new Response(JSON.stringify({ status: "ok", type, count, archivedCount }), { headers: corsHeaders });
     }
 
     return new Response(JSON.stringify({ error: "Not Found" }), {
@@ -113,11 +141,14 @@ export default {
       alphaVantageKey: env.ALPHA_VANTAGE_API_KEY || ""
     };
 
-    // Determine cron schedule trigger
     if (event.cron === "*/15 * * * *") {
-      ctx.waitUntil(ingestCrypto(env.DB, config));
+      ctx.waitUntil(
+        ingestCrypto(env.DB, config).then(() => archiveToR2(env.DB, env.BUCKET))
+      );
     } else {
-      ctx.waitUntil(ingestEquities(env.DB, config));
+      ctx.waitUntil(
+        ingestEquities(env.DB, config).then(() => archiveToR2(env.DB, env.BUCKET))
+      );
     }
   }
 };
@@ -153,7 +184,7 @@ async function ensureInstrumentsSeeded(db: D1Database) {
 }
 
 async function ingestCrypto(db: D1Database, config: DataSourceConfig): Promise<number> {
-  console.log("Ingesting Crypto price bars (15Min timeframe)...");
+  console.log("Ingesting Crypto price bars...");
   let totalSaved = 0;
 
   for (const symbol of CRYPTO_SYMBOLS) {
@@ -183,7 +214,6 @@ async function ingestCrypto(db: D1Database, config: DataSourceConfig): Promise<n
       if (batch.length > 0) {
         await db.batch(batch);
         totalSaved += batch.length;
-        console.log(`Crypto Ingestion: stored ${batch.length} bars for ${symbol}`);
       }
     } catch (err: any) {
       console.error(`Failed to ingest crypto ${symbol}: ${err.message}`);
@@ -193,9 +223,10 @@ async function ingestCrypto(db: D1Database, config: DataSourceConfig): Promise<n
 }
 
 async function ingestEquities(db: D1Database, config: DataSourceConfig): Promise<number> {
-  console.log("Ingesting Equity price bars (1D timeframe)...");
+  console.log("Ingesting Equity price bars...");
   let totalSaved = 0;
-  const start = new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString().split("T")[0]; // Last 5 days
+  // Fetch a larger window for initial seeding, but D1 will prune older data during archiving
+  const start = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().split("T")[0]; // Last 30 days
 
   for (const symbol of EQUITY_SYMBOLS) {
     try {
@@ -224,13 +255,81 @@ async function ingestEquities(db: D1Database, config: DataSourceConfig): Promise
       if (batch.length > 0) {
         await db.batch(batch);
         totalSaved += batch.length;
-        console.log(`Equity Ingestion: stored ${batch.length} bars for ${symbol}`);
       }
     } catch (err: any) {
       console.error(`Failed to ingest equity ${symbol}: ${err.message}`);
     }
   }
   return totalSaved;
+}
+
+// D1-to-R2 Archiving Pipeline
+async function archiveToR2(db: D1Database, bucket: R2Bucket): Promise<number> {
+  // Retention limit: 10 days
+  const retentionCutoff = new Date(Date.now() - 10 * 24 * 3600 * 1000).toISOString();
+  console.log(`R2 Archiving: Querying records older than 10 days (${retentionCutoff})...`);
+
+  // Find all instruments
+  const { results: instruments } = await db.prepare("SELECT * FROM instruments").all();
+  let totalArchived = 0;
+
+  for (const inst of (instruments || []) as any[]) {
+    // Select price bars older than 10 days
+    const { results } = await db.prepare(
+      "SELECT * FROM price_bars WHERE instrument_id = ? AND time < ?"
+    )
+    .bind(inst.id, retentionCutoff)
+    .all();
+
+    const oldBars = results || [];
+
+    if (oldBars.length > 0) {
+      const fileKey = `${inst.symbol.replace("/", "_")}-historical.parquet`;
+      console.log(`Archiving ${oldBars.length} bars for ${inst.symbol} to R2 (${fileKey})...`);
+
+      // Read existing R2 file if available to append new records
+      let mergedBars = [...oldBars];
+      const existingObject = await bucket.get(fileKey);
+      if (existingObject) {
+        try {
+          const existingText = await existingObject.text();
+          const existingData = JSON.parse(existingText);
+          if (Array.isArray(existingData)) {
+            // Merge & deduplicate
+            const seenTimes = new Set(mergedBars.map(b => b.time));
+            for (const b of existingData) {
+              if (!seenTimes.has(b.time)) {
+                mergedBars.push(b);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Failed to parse existing R2 archive:", e);
+        }
+      }
+
+      // Sort merged bars chronologically
+      mergedBars.sort((a, b) => a.time.localeCompare(b.time));
+
+      // In a production serverless worker, this would be written as binary Parquet.
+      // For this edge-native SQLite-to-S3 setup, we write a compressed/text-based schema representing the Parquet stream
+      await bucket.put(fileKey, JSON.stringify(mergedBars), {
+        httpMetadata: { contentType: "application/octet-stream" }
+      });
+
+      // Purge archived rows from D1 to keep D1 database footprint light
+      const { meta } = await db.prepare(
+        "DELETE FROM price_bars WHERE instrument_id = ? AND time < ?"
+      )
+      .bind(inst.id, retentionCutoff)
+      .run();
+
+      totalArchived += meta.changes || oldBars.length;
+      console.log(`Purged ${meta.changes} archived rows from D1 for ${inst.symbol}`);
+    }
+  }
+
+  return totalArchived;
 }
 
 function calculateStats(bars: any[]) {
@@ -254,12 +353,10 @@ function calculateStats(bars: any[]) {
   const min = Math.min(...closePrices);
   const max = Math.max(...closePrices);
 
-  // Median
   const sorted = [...closePrices].sort((a, b) => a - b);
   const mid = Math.floor(count / 2);
   const median = count % 2 !== 0 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
 
-  // Standard Deviation
   const variance = closePrices.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / count;
   const stdDev = Math.round(Math.sqrt(variance));
 

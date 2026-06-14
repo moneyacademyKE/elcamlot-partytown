@@ -1,4 +1,4 @@
-const API_URL = "http://localhost:8787"; // Default Cloudflare wrangler dev server port
+const API_URL = "http://localhost:8787";
 
 document.addEventListener("DOMContentLoaded", () => {
   initDashboard();
@@ -11,7 +11,6 @@ async function initDashboard() {
     const instruments = await res.json();
     renderSidebar(instruments);
 
-    // Load first instrument by default if available
     if (instruments.length > 0) {
       loadInstrument(instruments[0]);
     }
@@ -46,7 +45,6 @@ function renderSidebar(instruments) {
     `;
 
     btn.addEventListener("click", () => {
-      // Remove active states
       document.querySelectorAll(".sidebar-btn").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
       loadInstrument(inst);
@@ -55,7 +53,6 @@ function renderSidebar(instruments) {
     container.appendChild(btn);
   });
 
-  // Mark first active
   const first = container.querySelector(".sidebar-btn");
   if (first) first.classList.add("active");
 }
@@ -63,7 +60,6 @@ function renderSidebar(instruments) {
 async function loadInstrument(inst) {
   const timeframe = inst.asset_class === "crypto" ? "15Min" : "1D";
   
-  // Update header and view indicators
   document.getElementById("active-symbol").innerText = inst.symbol;
   const assetClassBadge = document.getElementById("active-asset-class");
   assetClassBadge.innerText = inst.asset_class.replace("_", " ");
@@ -71,32 +67,102 @@ async function loadInstrument(inst) {
     inst.asset_class === "crypto" ? "badge-crypto" : "badge-stock"
   }`;
 
-  // Reset view to loading
   setLoadingState(true);
 
   try {
-    const res = await fetch(`${API_URL}/api/bars?instrument_id=${inst.id}&timeframe=${timeframe}`);
-    if (!res.ok) throw new Error("Failed to fetch bars");
-    const data = await res.json();
-    
-    // In Partytown, forward analytics events to the Web Worker
+    // 1. Fetch HOT price data from D1 Database (last 10 days cache)
+    const hotRes = await fetch(`${API_URL}/api/bars?instrument_id=${inst.id}&timeframe=${timeframe}`);
+    if (!hotRes.ok) throw new Error("Failed to fetch D1 hot bars");
+    const hotData = await hotRes.json();
+    const hotBars = hotData.bars || [];
+
+    // 2. Fetch COLD historical data from R2 Bucket (queries offloaded via Partytown worker)
+    let coldBars = [];
+    if (typeof window.queryDuckDB === "function") {
+      try {
+        coldBars = await window.queryDuckDB(inst.symbol);
+      } catch (e) {
+        console.log("No historical archive in R2 found yet for", inst.symbol);
+      }
+    }
+
+    // 3. Merge Hot (D1) and Cold (R2) datasets
+    const mergedBars = mergeDatasets(hotBars, coldBars);
+
+    // 4. Calculate unified statistics on the merged dataset
+    const unifiedStats = calculateUnifiedStats(mergedBars);
+
+    // 5. In Partytown, forward telemetry event
     if (typeof window.trackEvent === "function") {
       window.trackEvent("view_instrument", {
         symbol: inst.symbol,
         asset_class: inst.asset_class,
-        bars_count: data.bars.length
+        hot_bars_count: hotBars.length,
+        cold_bars_count: coldBars.length,
+        total_bars_count: mergedBars.length
       });
     }
 
-    renderStats(data.stats);
-    renderChart(data.bars);
-    renderTable(data.bars);
+    renderStats(unifiedStats);
+    renderChart(mergedBars);
+    renderTable(mergedBars);
     setLoadingState(false);
   } catch (err) {
-    console.error("Failed to load instrument bars:", err);
+    console.error("Failed to load instrument data:", err);
     setLoadingState(false);
     showErrorState();
   }
+}
+
+function mergeDatasets(hotBars, coldBars) {
+  // Map both sets, convert column names if necessary, and deduplicate by time
+  const merged = [...hotBars];
+  const seenTimes = new Set(hotBars.map(b => b.time));
+
+  coldBars.forEach(b => {
+    // Map D1 schema parameters
+    const mappedBar = {
+      time: b.time,
+      open_cents: b.open_cents,
+      high_cents: b.high_cents,
+      low_cents: b.low_cents,
+      close_cents: b.close_cents,
+      volume: b.volume,
+      timeframe: b.timeframe
+    };
+
+    if (!seenTimes.has(mappedBar.time)) {
+      merged.push(mappedBar);
+      seenTimes.add(mappedBar.time);
+    }
+  });
+
+  // Sort chronologically
+  return merged.sort((a, b) => a.time.localeCompare(b.time));
+}
+
+function calculateUnifiedStats(bars) {
+  if (bars.length === 0) {
+    return { avg_price: null, median: null, min_price: null, max_price: null };
+  }
+
+  const closePrices = bars.map(b => b.close_cents);
+  const count = closePrices.length;
+  const sum = closePrices.reduce((a, b) => a + b, 0);
+  const avg = Math.round(sum / count);
+  const min = Math.min(...closePrices);
+  const max = Math.max(...closePrices);
+
+  const sorted = [...closePrices].sort((a, b) => a - b);
+  const mid = Math.floor(count / 2);
+  const median = count % 2 !== 0 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+
+  return {
+    avg_price: avg,
+    median: median,
+    min_price: min,
+    max_price: max
+  };
 }
 
 function setLoadingState(isLoading) {
@@ -151,7 +217,6 @@ function renderChart(bars) {
     return;
   }
 
-  // Draw pure SVG chart (lightweight, highly responsive, zero main-thread block)
   const width = container.clientWidth || 600;
   const height = container.clientHeight || 280;
   const padding = 20;
@@ -171,7 +236,6 @@ function renderChart(bars) {
     return acc + `${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y} `;
   }, "");
 
-  // Area under path
   const areaD = pathD + `L ${points[points.length - 1].x} ${height - padding} L ${points[0].x} ${height - padding} Z`;
 
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -181,7 +245,6 @@ function renderChart(bars) {
   svg.style.overflow = "visible";
 
   svg.innerHTML = `
-    <!-- Gradients -->
     <defs>
       <linearGradient id="chart-glow" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stop-color="#f97316" stop-opacity="0.25"></stop>
@@ -189,20 +252,17 @@ function renderChart(bars) {
       </linearGradient>
     </defs>
     
-    <!-- Grid horizontal lines -->
     <line x1="${padding}" y1="${padding}" x2="${width - padding}" y2="${padding}" stroke="rgba(255,255,255,0.03)" stroke-width="1" />
     <line x1="${padding}" y1="${height / 2}" x2="${width - padding}" y2="${height / 2}" stroke="rgba(255,255,255,0.03)" stroke-width="1" />
     <line x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}" stroke="rgba(255,255,255,0.05)" stroke-width="1" />
 
-    <!-- Glow Area -->
     <path d="${areaD}" fill="url(#chart-glow)" />
-
-    <!-- Line Path -->
     <path d="${pathD}" fill="none" stroke="#f97316" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
   `;
 
-  // Draw interactive tooltip dots on hover
-  points.forEach(p => {
+  // Draw interactive tooltip dots on hover (show last 15 points to keep UI fast)
+  const renderPoints = points.length > 50 ? points.filter((_, i) => i % Math.floor(points.length / 20) === 0) : points;
+  renderPoints.forEach(p => {
     const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
     circle.setAttribute("cx", p.x.toString());
     circle.setAttribute("cy", p.y.toString());
@@ -215,12 +275,8 @@ function renderChart(bars) {
 
     circle.innerHTML = `<title>${p.date}: ${formatCents(p.price)}</title>`;
     
-    circle.addEventListener("mouseenter", () => {
-      circle.setAttribute("r", "6");
-    });
-    circle.addEventListener("mouseleave", () => {
-      circle.setAttribute("r", "4");
-    });
+    circle.addEventListener("mouseenter", () => circle.setAttribute("r", "6"));
+    circle.addEventListener("mouseleave", () => circle.setAttribute("r", "4"));
 
     svg.appendChild(circle);
   });
@@ -243,7 +299,7 @@ function renderTable(bars) {
     return;
   }
 
-  // Show latest 10 bars in table
+  // Show latest 10 bars
   const latestBars = [...bars].reverse().slice(0, 10);
   latestBars.forEach(b => {
     const tr = document.createElement("tr");
