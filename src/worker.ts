@@ -7,7 +7,18 @@ export interface Env {
   ALPHA_VANTAGE_API_KEY?: string;
 }
 
-const EQUITY_SYMBOLS = ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "SPY", "QQQ"];
+const EQUITY_SYMBOLS = [
+  "AAPL", "MSFT", "NVDA", "ADBE", "ADI", "ADP", "ADSK", "AEP", "ALNY", "AMAT",
+  "AMD", "AMGN", "AMZN", "APP", "ARM", "ASML", "AVGO", "AXON", "BIIB", "BKNG",
+  "BKR", "CDNS", "CEG", "CHTR", "CPRT", "CRWD", "CSCO", "CSGP", "CSX", "CTAS",
+  "CTSH", "DASH", "DDOG", "DLTR", "DXCM", "EA", "EBAY", "ENPH", "EXC", "FANG",
+  "FAST", "FTNT", "GEHC", "GILD", "GOOG", "GOOGL", "HON", "IDXX", "ILMN", "INCY",
+  "INTC", "INTU", "ISRG", "KDP", "KHC", "KLAC", "LRCX", "LULU", "MAR", "MDB",
+  "MDLZ", "MELI", "META", "MNST", "MRNA", "MRVL", "MU", "NFLX", "ODFL", "ON",
+  "ORLY", "PANW", "PAYX", "PCAR", "PDD", "PEP", "PLTR", "PYPL", "QCOM", "REGN",
+  "ROST", "SBUX", "SNPS", "TEAM", "TMUS", "TSLA", "TTWO", "TXN", "VEEV", "VICI",
+  "VRSK", "VRTX", "WBA", "WBD", "WDAY", "WMT", "ZS", "SPY", "QQQ"
+];
 const CRYPTO_SYMBOLS = ["BTC/USD", "ETH/USD"];
 
 export default {
@@ -112,25 +123,31 @@ export default {
 };
 
 async function ensureInstrumentsSeeded(db: D1Database) {
-  const { results } = await db.prepare("SELECT COUNT(*) as count FROM instruments").all();
-  const count = (results?.[0] as any)?.count || 0;
-  if (count === 0) {
-    console.log("Seeding initial instruments into Cloudflare D1...");
-    const batch = [];
-    for (const sym of EQUITY_SYMBOLS) {
+  const { results: existing } = await db.prepare("SELECT symbol FROM instruments").all();
+  const existingSet = new Set((existing || []).map((x: any) => x.symbol));
+
+  const batch = [];
+  for (const sym of EQUITY_SYMBOLS) {
+    if (!existingSet.has(sym)) {
       batch.push(
         db.prepare(
           "INSERT INTO instruments (symbol, asset_class) VALUES (?, 'us_equity')"
         ).bind(sym)
       );
     }
-    for (const sym of CRYPTO_SYMBOLS) {
+  }
+  for (const sym of CRYPTO_SYMBOLS) {
+    if (!existingSet.has(sym)) {
       batch.push(
         db.prepare(
           "INSERT INTO instruments (symbol, asset_class) VALUES (?, 'crypto')"
         ).bind(sym)
       );
     }
+  }
+
+  if (batch.length > 0) {
+    console.log(`Seeding ${batch.length} new instruments into Cloudflare D1...`);
     await db.batch(batch);
   }
 }
